@@ -73,16 +73,19 @@ def aggregate_data_frames(stations_data):
     prcp, tmin, tmax = [], [], []
     for csv_file_path, stations in stations_data.items():
         logging.info('Reading file: %s', csv_file_path)
-        csv_file = pandas.read_csv(csv_file_path, na_values=-9999,
-                                   parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
-        for group_info in csv_file.groupby("STATION").groups.items():
-            station, _ = group_info
-            if station in stations:
-                logging.info("--processing station: " + station)
-                prcp.append(get_specific_data_frame_for_group(csv_file, group_info, "PRCP"))
-                tmin.append(get_specific_data_frame_for_group(csv_file, group_info, "TMIN"))
-                tmax.append(get_specific_data_frame_for_group(csv_file, group_info, "TMAX"))
-
+        try:
+            csv_file = pandas.read_csv(csv_file_path, na_values=-9999,
+                                       parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
+        except ValueError:
+            logging.exception('Failed to parse file: %s', csv_file_path)
+        else:
+            for group_info in csv_file.groupby("STATION").groups.items():
+                station, _ = group_info
+                if station in stations:
+                    logging.info("--processing station: " + station)
+                    prcp.append(get_specific_data_frame_for_group(csv_file, group_info, "PRCP"))
+                    tmin.append(get_specific_data_frame_for_group(csv_file, group_info, "TMIN"))
+                    tmax.append(get_specific_data_frame_for_group(csv_file, group_info, "TMAX"))
     return prcp, tmax, tmin
 
 
@@ -131,6 +134,7 @@ def process_daily(basein_file_path, section_file_path, csv_files_paths, output_p
     section_stations = load_section_file(section_file_path)
 
     for csv_file_path in csv_files_paths:
+        logging.info('Processing %s', basename(csv_file_path))
         csv_file = pandas.read_csv(csv_file_path, parse_dates=True, index_col=0)
         output_file_name = splitext(basename(csv_file_path))[0] + '_processed.csv'
         output_file_path = join(output_path, output_file_name)
