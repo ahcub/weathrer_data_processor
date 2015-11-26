@@ -10,8 +10,7 @@ import numpy
 import pandas
 from scipy.interpolate import griddata
 
-from utils import configure_logging, run_tasks, clear_dir, \
-    load_basein_file, load_section_file, get_shape_file_and_correspondent_stations, get_files_for_getting_daily_metrics
+from utils import *
 
 LOG_FILE_NAME = 'process.log'
 
