@@ -5,11 +5,9 @@ from datetime import datetime
 from glob import glob
 from os import getcwd
 from os.path import join, basename, splitext, abspath, dirname
-
 import numpy
 import pandas
 from scipy.interpolate import griddata
-
 from utils import *
 
 LOG_FILE_NAME = 'process.log'
@@ -39,7 +37,7 @@ def create_weather_reports():
     clear_dir(data_frames_dir_path)
     open(join(getcwd(), LOG_FILE_NAME), 'w').close()
     shape_file_and_correspondent_stations = get_shape_file_and_correspondent_stations(csv_data_path, section_files_path)
-    run_process_of_making_data_frames(shape_file_and_correspondent_stations, daily_results_dir_path)
+    run_process_of_making_data_frames(shape_file_and_correspondent_stations, data_frames_dir_path)
 
     clear_dir(daily_results_dir_path)
     data_files = get_files_for_getting_daily_metrics(basein_files_path, section_files_path, data_frames_dir_path)
@@ -47,6 +45,7 @@ def create_weather_reports():
 
     clear_dir(monthly_results_dir_path)
     run_processing_monthly_metrics(daily_results_dir_path, monthly_results_dir_path)
+    logging.info('Reports created. You can find them inside output folder')
 
 
 def run_process_of_making_data_frames(shape_file_and_correspondent_stations, output_path):
@@ -212,7 +211,10 @@ def calculate_monthly_values(data_file_path, output_path):
     daily_data_frame = pandas.read_csv(data_file_path, parse_dates=True, index_col=0,
                                        usecols=["date", "area-weighted"], na_values=["NAN"])
 
-    groups = daily_data_frame.groupby([lambda x: x.year, lambda x: x.month]).sum()
+    if "_prcp_" in data_file_path.lower():
+        groups = daily_data_frame.groupby([lambda x: x.year, lambda x: x.month]).sum()
+    else:
+        groups = daily_data_frame.groupby([lambda x: x.year, lambda x: x.month]).mean()
 
     datetimes_collection = []
     for year, month in groups.index:
@@ -223,4 +225,7 @@ def calculate_monthly_values(data_file_path, output_path):
 
 
 if __name__ == '__main__':
-    create_weather_reports()
+    try:
+        create_weather_reports()
+    except Exception as e:
+        logging.exception('Error on executing main function')
