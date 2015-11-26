@@ -1,15 +1,13 @@
 import logging
+import re
 from distutils.dir_util import remove_tree
 from glob import glob
-from os.path import join, isdir, isfile, islink, exists
-
+from os.path import join, isdir, isfile, islink, exists, basename
 import numpy
 import pandas
 import os
 from multiprocessing import Process
 from stat import *
-
-
 import shapefile
 import sys
 
@@ -113,7 +111,7 @@ def mkpath(path):
         os.makedirs(path)
 
 
-def load_basein_shape_file(shape_file_path):
+def load_basein_file(shape_file_path):
     shape_file = shapefile.Reader(shape_file_path)
     x_idx, y_idx, mask_idx = get_fields_indexes(shape_file)
 
@@ -176,7 +174,7 @@ def process_record_raw_arrays(raw_x_array, raw_y_array, raw_masks_array):
     return x, y, masks_array
 
 
-def load_gauge_shape_file(shape_file_path):
+def load_section_file(shape_file_path):
     shape_file = shapefile.Reader(shape_file_path)
     fieldnames = [field[0] for field in shape_file.fields]
     station_idx = fieldnames.index("STATION") - 1
@@ -184,12 +182,42 @@ def load_gauge_shape_file(shape_file_path):
     stations = {}
     for record_index in range(shape_file.numRecords):
         station = shape_file.record(record_index)[station_idx]
-        if station in stations:
-            raise Exception("duplicate station: %s" % station)
+        if station.strip():
+            if station in stations:
+                raise Exception("duplicate station: %s" % station)
 
-        x, y = shape_file.shape(record_index).points[0]
-        stations[station] = (x, y)
+            x, y = shape_file.shape(record_index).points[0]
+            stations[station] = (x, y)
 
     return stations
 
 
+def get_files_for_getting_daily_metrics(basein_files_root, section_files_root, data_files_root):
+    basein_files_registry = create_files_registry(basein_files_root, '*.shp')
+    section_files_registry = create_files_registry(section_files_root, '*.shp')
+    data_files_registry = create_files_registry(data_files_root, '*.csv')
+
+    files_registry = []
+    for key in basein_files_registry.keys():
+        if key not in section_files_registry:
+            raise Exception('Could not find session %s for sections files in path %s' % (key, section_files_root))
+        if key not in data_files_registry:
+            raise Exception('Could not find session %s for data files in path %s' % (key, data_files_root))
+        files_registry.append((basein_files_registry[key][0], section_files_registry[key][0], data_files_registry[key]))
+
+    return files_registry
+
+
+def create_files_registry(files_path, pattern):
+    registry = {}
+    for file_path in glob(join(files_path, pattern)):
+        search_result = re.search('\d+', basename(file_path))
+        if search_result is None:
+            raise Exception('Could not extract session number from file name: %s' % file_path)
+        key = int(search_result.group())
+        if key not in registry:
+            registry[key] = []
+
+        registry[key].append(file_path)
+
+    return registry

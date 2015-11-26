@@ -1,52 +1,73 @@
 import logging
-from argparse import ArgumentParser
+from ConfigParser import ConfigParser
+from calendar import monthrange
+from datetime import datetime
+from glob import glob
 from os import getcwd
-from os.path import join, basename
+from os.path import join, basename, splitext, abspath, dirname
+
+import numpy
 import pandas
+from scipy.interpolate import griddata
 
-from utils import configure_logging, get_shape_file_and_correspondent_stations, run_tasks, clear_dir
+from utils import configure_logging, run_tasks, clear_dir, \
+    load_basein_file, load_section_file, get_shape_file_and_correspondent_stations, get_files_for_getting_daily_metrics
 
-
-LOG_FILE_NAME = 'weather_reports.log'
+LOG_FILE_NAME = 'process.log'
 
 configure_logging(LOG_FILE_NAME)
 
-
-CSV_DATA_PATH = r'C:\Users\Alex\Desktop\Upwork_data\NCDC_Climate_Raw Data'
-SHAPEFILES_PATH = r'C:\Users\Alex\Desktop\Upwork_data\CRB_NCDC_SectionFiles'
-
-root_dir = getcwd()
-RESULT_DIR = r'DATA_FRAMES'
-RESULT_DIR_PATH = join(root_dir, RESULT_DIR)
+DATA_FRAMES_DIR = r'DATA_FRAMES'
+DAILY_RESULTS_DIR = r'DAILY'
+MONTHLY_RESULTS_DIR = r'MONTHLY'
 
 
 def create_weather_reports():
     logging.info('Start parsing weather data')
-    clear_dir(RESULT_DIR_PATH)
+    config = ConfigParser()
+    config.read(join(dirname(abspath(__file__)), 'paths_config.cfg'))
+
+    csv_data_path = config.get('paths', 'csv_data_path')
+    section_files_path = config.get('paths', 'section_files_path')
+    basein_files_path = config.get('paths', 'basein_files_path')
+
+    output_dir_path = config.get('paths', 'output_dir_path')
+
+    data_frames_dir_path = join(output_dir_path, DATA_FRAMES_DIR)
+    daily_results_dir_path = join(output_dir_path, DAILY_RESULTS_DIR)
+    monthly_results_dir_path = join(output_dir_path, MONTHLY_RESULTS_DIR)
+
+    clear_dir(data_frames_dir_path)
     open(join(getcwd(), LOG_FILE_NAME), 'w').close()
-    shape_file_and_correspondent_stations = get_shape_file_and_correspondent_stations(CSV_DATA_PATH, SHAPEFILES_PATH)
-    run_process_of_making_data_frames(shape_file_and_correspondent_stations)
-    logging.info('Work done')
+    shape_file_and_correspondent_stations = get_shape_file_and_correspondent_stations(csv_data_path, section_files_path)
+    run_process_of_making_data_frames(shape_file_and_correspondent_stations, daily_results_dir_path)
+
+    clear_dir(daily_results_dir_path)
+    data_files = get_files_for_getting_daily_metrics(basein_files_path, section_files_path, data_frames_dir_path)
+    run_processing_daily_metrics(data_files, daily_results_dir_path)
+
+    clear_dir(monthly_results_dir_path)
+    run_processing_monthly_metrics(daily_results_dir_path, monthly_results_dir_path)
 
 
-def run_process_of_making_data_frames(shape_file_and_correspondent_stations):
-    logging.info('Starting tasks')
+def run_process_of_making_data_frames(shape_file_and_correspondent_stations, output_path):
+    logging.info('Starting making data frame tasks')
     tasks_desc = []
     for shape_file, stations in shape_file_and_correspondent_stations.items():
-        task_desc = {'target': make_data_frames, 'args': (shape_file, stations)}
+        task_desc = {'target': make_data_frames, 'args': (shape_file, stations, output_path)}
         tasks_desc.append(task_desc)
 
     run_tasks(tasks_desc)
 
 
-def make_data_frames(station_shape_file, stations_data):
+def make_data_frames(station_shape_file, stations_data, output_path):
     logging.info('Making data frame for shapefile: %s', basename(station_shape_file))
     prcp, tmax, tmin = aggregate_data_frames(stations_data)
 
     logging.info("joining {0:d} dataframes".format(len(prcp)))
     prcp_df, tmax_df, tmin_df = join_data_aggregated_data_frames(prcp, tmax, tmin)
 
-    output_base = join(RESULT_DIR_PATH, basename(station_shape_file).rstrip('.shp'))
+    output_base = join(output_path, basename(station_shape_file).rstrip('.shp'))
     dump_data_frames(output_base, prcp_df, tmax_df, tmin_df)
 
 
@@ -55,7 +76,7 @@ def aggregate_data_frames(stations_data):
     for csv_file_path, stations in stations_data.items():
         logging.info('Reading file: %s', csv_file_path)
         csv_file = pandas.read_csv(csv_file_path, na_values=-9999,
-                                   parse_dates=["DATE"], usecols=[0, 5, 6, 7, 8])
+                                   parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
         for group_info in csv_file.groupby("STATION").groups.items():
             station, _ = group_info
             if station in stations:
@@ -95,11 +116,112 @@ def dump_data_frames(output_base, prcp_df, tmax_df, tmin_df):
     tmax_df.to_csv(output_base + '_tmax.csv')
 
 
-def parse_cmd_line():
-    parser = ArgumentParser()
-    parser.add_argument('-r', '--raw_data_path', required=True)
-    parser.add_argument('-s', '--shape_files_path', required=True)
-    return parser.parse_args()
+def run_processing_daily_metrics(data_files, output_path):
+    logging.info('Start processing daily')
+    tasks_desc = []
+    for basein_file_path, section_file_path, csv_files_paths in data_files:
+        task_desc = {'target': process_daily, 'args': (basein_file_path, section_file_path,
+                                                       csv_files_paths, output_path)}
+        tasks_desc.append(task_desc)
+
+    run_tasks(tasks_desc)
+
+
+def process_daily(basein_file_path, section_file_path, csv_files_paths, output_path):
+    logging.info('Process daily for %s', basename(basein_file_path))
+    x, y, masks_array = load_basein_file(basein_file_path)
+    section_stations = load_section_file(section_file_path)
+
+    for csv_file_path in csv_files_paths:
+        csv_file = pandas.read_csv(csv_file_path, parse_dates=True, index_col=0)
+        output_file_name = splitext(basename(csv_file_path))[0] + '_processed.csv'
+        output_file_path = join(output_path, output_file_name)
+
+        with open(output_file_path, 'w', 0) as output_file:
+            output_file.write(','.join(("date", "area-weighted", "max", "min", "count", "gauge_pairs")) + '\n')
+
+            for date in csv_file.index:
+                points, stations, values = prepare_data_raw_data(csv_file, date, section_stations)
+
+                count = len(values)
+                if len(values) == 0:
+                    awa = numpy.NaN
+                    upr = numpy.NaN
+                    lwr = numpy.NaN
+                else:
+                    values = numpy.array(values)
+                    points = numpy.array(points)
+                    if not numpy.all(values == values[0]):
+                        grid = griddata(points, values, (x, y), method="nearest")
+                        grid = numpy.ma.masked_where(masks_array == 0, grid)
+                        contrib = []
+                        unique_vals = numpy.unique(grid)
+                        count = 0
+                        for station, value in zip(stations, values):
+                            if value in unique_vals:
+                                mask = numpy.zeros_like(grid)
+                                mask = numpy.ma.masked_where(masks_array == 0, mask)
+                                mask[numpy.where(grid == value)] = 1
+                                unique_vals_count = numpy.sum(mask)
+                                contrib.append(unique_vals_count / masks_array.sum())
+                                count += 1
+                        awa = grid.mean()
+                        upr = max(unique_vals)
+                        lwr = min(unique_vals)
+                        values = contrib
+                    else:
+                        awa = values[0]
+                        upr = values[0]
+                        lwr = values[0]
+
+                line = "{0:s},{1:E},{2:E},{3:E},{4:d},".format(str(date), float(awa), float(upr), float(lwr), count)
+                for site, val in zip(stations, values):
+                    line += ' ' + site + "|{0:E}".format(val)
+                line += '\n'
+                output_file.write(line)
+
+
+def prepare_data_raw_data(csv_file, date, section_stations):
+    date_df = csv_file.loc[date, :].dropna()
+    points = []
+    values = []
+    stations = []
+    if date_df.shape[0] == 1:
+        values = date_df.values
+    elif date_df.shape[0] != 0:
+        for station, value in zip(date_df.index, date_df.values):
+            if station in stations:
+                raise Exception("Same station: %s found again on date %s" % (str(station), str(date)))
+
+            points.append(section_stations[station])
+            values.append(value)
+            stations.append(station)
+    return points, stations, values
+
+
+def run_processing_monthly_metrics(data_files_path, output_path):
+    tasks_desc = []
+    for file_path in glob(join(data_files_path, '*.csv')):
+        task_desc = {'target': calculate_monthly_values, 'args': (file_path, output_path)}
+        tasks_desc.append(task_desc)
+
+    run_tasks(tasks_desc)
+
+
+def calculate_monthly_values(data_file_path, output_path):
+    logging.info('Calculating monthly metrics for file: %s', data_file_path)
+    daily_data_frame = pandas.read_csv(data_file_path, parse_dates=True, index_col=0,
+                                       usecols=["date", "area-weighted"], na_values=["NAN"])
+
+    groups = daily_data_frame.groupby([lambda x: x.year, lambda x: x.month]).sum()
+
+    datetimes_collection = []
+    for year, month in groups.index:
+        datetimes_collection.append(datetime(year=year, month=month, day=monthrange(year, month)[1],
+                                             hour=23, minute=59, second=59))
+    groups.index = datetimes_collection
+    groups.to_csv(join(output_path, basename(data_file_path)), index_label="datetime")
+
 
 if __name__ == '__main__':
     create_weather_reports()
