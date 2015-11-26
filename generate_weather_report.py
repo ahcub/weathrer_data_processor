@@ -45,7 +45,7 @@ def create_weather_reports():
 
     clear_dir(monthly_results_dir_path)
     run_processing_monthly_metrics(daily_results_dir_path, monthly_results_dir_path)
-    logging.info('Reports created. You can find them inside output folder')
+    logging.info('Reports created. You can find them inside output folder: %s', output_dir_path)
 
 
 def run_process_of_making_data_frames(shape_file_and_correspondent_stations, output_path):
