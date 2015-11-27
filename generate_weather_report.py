@@ -12,7 +12,7 @@ from scipy.interpolate import griddata
 
 from utils import *
 
-LOG_FILE_NAME = 'process.log'
+LOG_FILE_NAME = join(dirname(abspath(__file__)), 'process.log')
 
 configure_logging(LOG_FILE_NAME)
 
