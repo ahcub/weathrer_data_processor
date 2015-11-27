@@ -1,0 +1,28 @@
+weather reports generator
+
+This scripts generates daily and monthly weather reports based on csv raw stations data, sections (.shp) and bounding boxes  (.shp) for this sections
+
+To run script you should specify 4 values in config (paths_config.cfg)
+1. "csv_data_path": path to csv raw stations data
+2. "section_files_path": path to sections (.shp) files
+3. "basein_files_path": path to bounding boxes (.shp) for sections
+4. "output_dir_path": path where script should output generated reports
+
+
+Requiremenents:
+- name of shape and bounding box files should contain a number (section identificator).
+- Raw data structure (note that columns numbers starts from 1):
+-- 1 column: "STATION ID" aka "STATION"
+-- 4 column: "LATITUDE"
+-- 5 column: "LONGITUDE"
+-- 6 column: "DATE"
+-- 9 column: "PRCP"
+-- 12 column: "TMAX"
+-- 13 column: "TMIN"
+
+
+Output structure:
+after script ends you will see three folders inside output folder (DATA_FRRAMES, DAILY, MONTHLY).
+'DATA_FRAMES': it is intermediate folder that used to generate DAILY reports
+'DAILY': folder that contains daily reports
+'MONTHLY': folder that contains monthly reports
