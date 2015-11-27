@@ -2,7 +2,7 @@ weather reports generator
 
 This scripts generates daily and monthly weather reports based on csv raw stations data, sections (.shp) and bounding boxes  (.shp) for this sections
 
-To run script you should specify 4 values in config (paths_config.cfg)
+To run script you should specify 4 values in config (paths.cfg)
 1. "csv_data_path": path to csv raw stations data
 2. "section_files_path": path to sections (.shp) files
 3. "basein_files_path": path to bounding boxes (.shp) for sections
