@@ -11,6 +11,7 @@ To run script you should specify 4 values in config (paths_config.cfg)
 
 Requiremenents:
 - name of shape and bounding box files should contain a number (section identificator).
+
 - Raw data structure (note that columns numbers starts from 1):
 -- 1 column: "STATION ID" aka "STATION"
 -- 4 column: "LATITUDE"
@@ -19,6 +20,9 @@ Requiremenents:
 -- 9 column: "PRCP"
 -- 12 column: "TMAX"
 -- 13 column: "TMIN"
+
+- Shape files should contain field "STATION"
+- Bounding Box files should contain fields: "Intersect", "x" and "y"
 
 
 Output structure:
