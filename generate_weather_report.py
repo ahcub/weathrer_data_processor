@@ -5,9 +5,11 @@ from datetime import datetime
 from glob import glob
 from os import getcwd
 from os.path import join, basename, splitext, abspath, dirname
+
 import numpy
 import pandas
 from scipy.interpolate import griddata
+
 from utils import *
 
 LOG_FILE_NAME = 'process.log'
@@ -22,7 +24,7 @@ MONTHLY_RESULTS_DIR = r'MONTHLY'
 def create_weather_reports():
     logging.info('Start parsing weather data')
     config = ConfigParser()
-    config.read(join(dirname(abspath(__file__)), 'paths_config.cfg'))
+    config.read(join(dirname(abspath(__file__)), 'paths.cfg'))
 
     csv_data_path = config.get('paths', 'csv_data_path')
     section_files_path = config.get('paths', 'section_files_path')
