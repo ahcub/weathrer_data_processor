@@ -38,6 +38,9 @@ def create_weather_reports():
 
     clear_dir(data_frames_dir_path)
     open(join(getcwd(), LOG_FILE_NAME), 'w').close()
+
+    check_csv_files_for_right_structure(csv_data_path)
+
     shape_file_and_correspondent_stations = get_shape_file_and_correspondent_stations(csv_data_path, section_files_path)
     run_process_of_making_data_frames(shape_file_and_correspondent_stations, data_frames_dir_path)
 
@@ -48,6 +51,36 @@ def create_weather_reports():
     clear_dir(monthly_results_dir_path)
     run_processing_monthly_metrics(daily_results_dir_path, monthly_results_dir_path)
     logging.info('Reports created. You can find them inside output folder: %s', output_dir_path)
+
+
+def check_csv_files_for_right_structure(csv_data_path):
+    logging.info('Checking csv data structure')
+    errors = []
+    required_fields = {"TMAX": 12, "TMIN": 13, "PRCP": 9}
+    for csv_file_path in glob(join(csv_data_path, '*.csv')):
+        try:
+            csv_file = pandas.read_csv(csv_file_path, na_values=-9999,
+                               parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
+        except ValueError:
+            error_entry = required_fields.keys()
+        else:
+            error_entry = []
+            for field in required_fields.keys():
+                if field not in csv_file.columns:
+                    error_entry.append(field)
+        if error_entry:
+            errors.append((basename(csv_file_path), error_entry))
+
+    if errors:
+        error_string = ''
+        for file_name, error_entry in errors:
+            error_string += 'Failure on file: %s\n' % file_name
+            for field in error_entry:
+                error_string += '\tfiled:%s should be in %s column\n' % (field, required_fields[field])
+            error_string += '='*40 + '\n'
+        raise Exception(error_string)
+
+    logging.info('Structure check done successfully')
 
 
 def run_process_of_making_data_frames(shape_file_and_correspondent_stations, output_path):
