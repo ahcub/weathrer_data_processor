@@ -3,11 +3,10 @@ from ConfigParser import ConfigParser
 from calendar import monthrange
 from datetime import datetime
 from glob import glob
-from os import getcwd
 from os.path import join, basename, splitext, abspath, dirname
 
-import numpy
-import pandas
+import numpy as np
+import pandas as pd
 from scipy.interpolate import griddata
 
 from utils import *
@@ -37,7 +36,7 @@ def create_weather_reports():
     monthly_results_dir_path = join(output_dir_path, MONTHLY_RESULTS_DIR)
 
     clear_dir(data_frames_dir_path)
-    open(join(getcwd(), LOG_FILE_NAME), 'w').close()
+    open(LOG_FILE_NAME, 'w').close()
 
     check_csv_files_for_right_structure(csv_data_path)
 
@@ -59,7 +58,7 @@ def check_csv_files_for_right_structure(csv_data_path):
     required_fields = {"TMAX": 12, "TMIN": 13, "PRCP": 9}
     for csv_file_path in glob(join(csv_data_path, '*.csv')):
         try:
-            csv_file = pandas.read_csv(csv_file_path, na_values=-9999,
+            csv_file = pd.read_csv(csv_file_path, na_values=-9999,
                                parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
         except ValueError:
             error_entry = required_fields.keys()
@@ -109,7 +108,7 @@ def aggregate_data_frames(stations_data):
     for csv_file_path, stations in stations_data.items():
         logging.info('Reading file: %s', csv_file_path)
         try:
-            csv_file = pandas.read_csv(csv_file_path, na_values=-9999,
+            csv_file = pd.read_csv(csv_file_path, na_values=-9999,
                                        parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
         except ValueError:
             logging.exception('Failed to parse file: %s', csv_file_path)
@@ -170,7 +169,7 @@ def process_daily(basein_file_path, section_file_path, csv_files_paths, output_p
 
     for csv_file_path in csv_files_paths:
         logging.info('Processing %s', basename(csv_file_path))
-        csv_file = pandas.read_csv(csv_file_path, parse_dates=True, index_col=0)
+        csv_file = pd.read_csv(csv_file_path, parse_dates=True, index_col=0)
         output_file_name = splitext(basename(csv_file_path))[0] + '_processed.csv'
         output_file_path = join(output_path, output_file_name)
 
@@ -182,24 +181,24 @@ def process_daily(basein_file_path, section_file_path, csv_files_paths, output_p
 
                 count = len(values)
                 if len(values) == 0:
-                    awa = numpy.NaN
-                    upr = numpy.NaN
-                    lwr = numpy.NaN
+                    awa = np.NaN
+                    upr = np.NaN
+                    lwr = np.NaN
                 else:
-                    values = numpy.array(values)
-                    points = numpy.array(points)
-                    if not numpy.all(values == values[0]):
+                    values = np.array(values)
+                    points = np.array(points)
+                    if not np.all(values == values[0]):
                         grid = griddata(points, values, (x, y), method="nearest")
-                        grid = numpy.ma.masked_where(masks_array == 0, grid)
+                        grid = np.ma.masked_where(masks_array == 0, grid)
                         contrib = []
-                        unique_vals = numpy.unique(grid)
+                        unique_vals = np.unique(grid)
                         count = 0
                         for station, value in zip(stations, values):
                             if value in unique_vals:
-                                mask = numpy.zeros_like(grid)
-                                mask = numpy.ma.masked_where(masks_array == 0, mask)
-                                mask[numpy.where(grid == value)] = 1
-                                unique_vals_count = numpy.sum(mask)
+                                mask = np.zeros_like(grid)
+                                mask = np.ma.masked_where(masks_array == 0, mask)
+                                mask[np.where(grid == value)] = 1
+                                unique_vals_count = np.sum(mask)
                                 contrib.append(unique_vals_count / masks_array.sum())
                                 count += 1
                         awa = grid.mean()
@@ -247,7 +246,7 @@ def run_processing_monthly_metrics(data_files_path, output_path):
 
 def calculate_monthly_values(data_file_path, output_path):
     logging.info('Calculating monthly metrics for file: %s', data_file_path)
-    daily_data_frame = pandas.read_csv(data_file_path, parse_dates=True, index_col=0,
+    daily_data_frame = pd.read_csv(data_file_path, parse_dates=True, index_col=0,
                                        usecols=["date", "area-weighted"], na_values=["NAN"])
 
     if "_prcp_" in data_file_path.lower():
