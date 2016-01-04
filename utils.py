@@ -45,6 +45,10 @@ def get_shape_file_and_correspondent_stations(csv_data_path, shape_files_path):
                     stations_inside_shapes_data[shape_file_path][file_name] = set()
                 stations_inside_shapes_data[shape_file_path][file_name].add(station)
 
+        if not stations_inside_shapes_data[shape_file_path]:
+            raise Exception('Could not find correspondent stations for shape %s. \n shape file stations: %s' % (
+                shape_file_path, shape_file_stations))
+
     return stations_inside_shapes_data
 
 
@@ -61,6 +65,8 @@ def get_field_index(shape_file, field_name):
 
 
 def get_stations_in_file(csv_data_path):
+    if not isdir(csv_data_path):
+        raise Exception('csv data folder path not found on path: %s' % csv_data_path)
     for csv_file_path in glob(join(csv_data_path, '*.csv')):
         csv_file = pandas.read_csv(csv_file_path, usecols=[0])
         for station in csv_file.STATION.unique():
@@ -76,6 +82,8 @@ def run_tasks(tasks_description):
 
     for task in tasks:
         task.join()
+        if task.exitcode != 0:
+            raise Exception('Task %s is finished with not-zero code: %s' % (task, task.exitcode))
 
 
 def clear_dir(path):
@@ -214,7 +222,8 @@ def get_files_for_getting_daily_metrics(basein_files_root, section_files_root, d
 
 def create_files_registry(files_path, pattern):
     registry = {}
-    for file_path in glob(join(files_path, pattern)):
+    path_pattern = join(files_path, pattern)
+    for file_path in glob(path_pattern):
         search_result = re.search('\d+', basename(file_path))
         if search_result is None:
             raise Exception('Could not extract session number from file name: %s' % file_path)
@@ -223,5 +232,5 @@ def create_files_registry(files_path, pattern):
             registry[key] = []
 
         registry[key].append(file_path)
-
+    logging.info('Registry for the path %s contains: %s', path_pattern, registry)
     return registry
