@@ -1,9 +1,10 @@
 import logging
+import sys
 from ConfigParser import ConfigParser
 from calendar import monthrange
 from datetime import datetime
 from glob import glob
-from os.path import join, basename, splitext, abspath, dirname
+from os.path import join, basename, splitext, dirname
 
 import numpy as np
 import pandas as pd
@@ -11,7 +12,7 @@ from scipy.interpolate import griddata
 
 from utils import *
 
-LOG_FILE_NAME = join(dirname(abspath(__file__)), 'process.log')
+LOG_FILE_NAME = join(dirname(sys.argv[0]), 'process.log')
 
 configure_logging(LOG_FILE_NAME)
 
@@ -23,7 +24,7 @@ MONTHLY_RESULTS_DIR = r'MONTHLY'
 def create_weather_reports():
     logging.info('Start parsing weather data')
     config = ConfigParser()
-    config.read(join(dirname(abspath(__file__)), 'paths.cfg'))
+    config.read(join(dirname(sys.argv[0]), 'paths.cfg'))
 
     csv_data_path = config.get('paths', 'csv_data_path')
     section_files_path = config.get('paths', 'section_files_path')
@@ -59,7 +60,7 @@ def check_csv_files_for_right_structure(csv_data_path):
     for csv_file_path in glob(join(csv_data_path, '*.csv')):
         try:
             csv_file = pd.read_csv(csv_file_path, na_values=-9999,
-                               parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
+                                   parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
         except ValueError:
             error_entry = required_fields.keys()
         else:
@@ -76,7 +77,7 @@ def check_csv_files_for_right_structure(csv_data_path):
             error_string += 'Failure on file: %s\n' % file_name
             for field in error_entry:
                 error_string += '\tfiled:%s should be in %s column\n' % (field, required_fields[field])
-            error_string += '='*40 + '\n'
+            error_string += '=' * 40 + '\n'
         raise Exception(error_string)
 
     logging.info('Structure check done successfully')
@@ -109,7 +110,7 @@ def aggregate_data_frames(stations_data):
         logging.info('Reading file: %s', csv_file_path)
         try:
             csv_file = pd.read_csv(csv_file_path, na_values=-9999,
-                                       parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
+                                   parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
         except ValueError:
             logging.exception('Failed to parse file: %s', csv_file_path)
         else:
@@ -247,7 +248,7 @@ def run_processing_monthly_metrics(data_files_path, output_path):
 def calculate_monthly_values(data_file_path, output_path):
     logging.info('Calculating monthly metrics for file: %s', data_file_path)
     daily_data_frame = pd.read_csv(data_file_path, parse_dates=True, index_col=0,
-                                       usecols=["date", "area-weighted"], na_values=["NAN"])
+                                   usecols=["date", "area-weighted"], na_values=["NAN"])
 
     if "_prcp_" in data_file_path.lower():
         groups = daily_data_frame.groupby([lambda x: x.year, lambda x: x.month]).sum()
