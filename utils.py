@@ -2,7 +2,7 @@ import logging
 import re
 from distutils.dir_util import remove_tree
 from glob import glob
-from os.path import join, isdir, isfile, islink, exists, basename
+from os.path import join, isdir, isfile, islink, exists, basename, dirname
 import numpy
 import pandas
 import os
@@ -14,22 +14,26 @@ import sys
 __all__ = [
     'configure_logging', 'run_tasks', 'clear_dir', 'load_basein_file',
     'load_section_file', 'get_shape_file_and_correspondent_stations',
-    'get_files_for_getting_daily_metrics'
+    'get_files_for_getting_daily_metrics', 'LOG_FILE_NAME'
 ]
 
 LOGGING_FORMAT = '%(asctime)-15s %(levelname)s %(message)s'
 DATE_FORMAT = '[%Y-%m-%d %H:%M:%S]'
+LOG_FILE_NAME = join(dirname(sys.argv[0]), 'process.log')
 
 WRITE = S_IWUSR | S_IWGRP | S_IWOTH
 
 
 def configure_logging(filename='app.log', level=logging.DEBUG):
+    logging.root.handlers = []
     logging.basicConfig(datefmt=DATE_FORMAT, format=LOGGING_FORMAT, level=level, stream=sys.stdout)
     file_handler = logging.FileHandler(filename=join(os.getcwd(), filename))
     file_handler.level = level
     formatter = logging.Formatter(datefmt=DATE_FORMAT, fmt=LOGGING_FORMAT)
     file_handler.setFormatter(formatter)
     logging.getLogger().addHandler(file_handler)
+
+configure_logging(LOG_FILE_NAME)
 
 
 def get_shape_file_and_correspondent_stations(csv_data_path, shape_files_path):
@@ -56,6 +60,7 @@ def get_station_names_from_shape_file(shape_file_name):
     shape_file = shapefile.Reader(shape_file_name)
     station_idx = get_field_index(shape_file, 'STATION')
     stations = set([record[station_idx] for record in shape_file.records()])
+    logging.info('Stations in shape file %s: %s', shape_file_name, stations)
     return stations
 
 
@@ -200,7 +205,7 @@ def load_section_file(shape_file_path):
 
             x, y = shape_file.shape(record_index).points[0]
             stations[station] = (x, y)
-
+    logging.info('Stations list from %s: %s', shape_file_path, stations)
     return stations
 
 

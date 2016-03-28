@@ -4,6 +4,7 @@ from ConfigParser import ConfigParser
 from calendar import monthrange
 from datetime import datetime
 from glob import glob
+from itertools import combinations
 from os.path import join, basename, splitext, dirname
 
 import numpy as np
@@ -11,8 +12,6 @@ import pandas as pd
 from scipy.interpolate import griddata
 
 from utils import *
-
-LOG_FILE_NAME = join(dirname(sys.argv[0]), 'process.log')
 
 configure_logging(LOG_FILE_NAME)
 
@@ -57,10 +56,14 @@ def check_csv_files_for_right_structure(csv_data_path):
     logging.info('Checking csv data structure')
     errors = []
     required_fields = {"TMAX": 12, "TMIN": 13, "PRCP": 9}
+    csv_stations = []
     for csv_file_path in glob(join(csv_data_path, '*.csv')):
         try:
             csv_file = pd.read_csv(csv_file_path, na_values=-9999,
                                    parse_dates=["DATE"], usecols=[0, 5, 8, 11, 12])
+
+            stations = set(csv_file.STATION.unique())
+            csv_stations.append((csv_file_path, stations))
         except ValueError:
             error_entry = required_fields.keys()
         else:
@@ -70,7 +73,6 @@ def check_csv_files_for_right_structure(csv_data_path):
                     error_entry.append(field)
         if error_entry:
             errors.append((basename(csv_file_path), error_entry))
-
     if errors:
         error_string = ''
         for file_name, error_entry in errors:
@@ -80,6 +82,15 @@ def check_csv_files_for_right_structure(csv_data_path):
             error_string += '=' * 40 + '\n'
         raise Exception(error_string)
 
+    intersection_errors = []
+    for (first_file, first_stations), (second_file, second_stations) in combinations(csv_stations, 2):
+        intersection = first_stations & second_stations
+        if intersection:
+            intersection_errors.append('files %s and %s have same stations: %s' % (first_file, second_file,
+                                                                                   ', '.join(intersection)))
+    if intersection_errors:
+        error_string = 'Failure with stations uniqueness:\n%s' % '\n'.join(intersection_errors)
+        raise Exception(error_string)
     logging.info('Structure check done successfully')
 
 
@@ -95,13 +106,16 @@ def run_process_of_making_data_frames(shape_file_and_correspondent_stations, out
 
 def make_data_frames(station_shape_file, stations_data, output_path):
     logging.info('Making data frame for shapefile: %s', basename(station_shape_file))
-    prcp, tmax, tmin = aggregate_data_frames(stations_data)
+    try:
+        prcp, tmax, tmin = aggregate_data_frames(stations_data)
 
-    logging.info("joining {0:d} dataframes".format(len(prcp)))
-    prcp_df, tmax_df, tmin_df = join_data_aggregated_data_frames(prcp, tmax, tmin)
+        logging.info("joining {0:d} dataframes".format(len(prcp)))
+        prcp_df, tmax_df, tmin_df = join_data_aggregated_data_frames(prcp, tmax, tmin)
 
-    output_base = join(output_path, basename(station_shape_file).rstrip('.shp'))
-    dump_data_frames(output_base, prcp_df, tmax_df, tmin_df)
+        output_base = join(output_path, basename(station_shape_file).rstrip('.shp'))
+        dump_data_frames(output_base, prcp_df, tmax_df, tmin_df)
+    except Exception:
+        logging.exception('error on %s', basename(station_shape_file))
 
 
 def aggregate_data_frames(stations_data):
@@ -165,57 +179,60 @@ def run_processing_daily_metrics(data_files, output_path):
 
 def process_daily(basein_file_path, section_file_path, csv_files_paths, output_path):
     logging.info('Process daily for %s', basename(basein_file_path))
-    x, y, masks_array = load_basein_file(basein_file_path)
-    section_stations = load_section_file(section_file_path)
+    try:
+        x, y, masks_array = load_basein_file(basein_file_path)
+        section_stations = load_section_file(section_file_path)
 
-    for csv_file_path in csv_files_paths:
-        logging.info('Processing %s', basename(csv_file_path))
-        csv_file = pd.read_csv(csv_file_path, parse_dates=True, index_col=0)
-        output_file_name = splitext(basename(csv_file_path))[0] + '_processed.csv'
-        output_file_path = join(output_path, output_file_name)
+        for csv_file_path in csv_files_paths:
+            logging.info('Processing %s', basename(csv_file_path))
+            csv_file = pd.read_csv(csv_file_path, parse_dates=True, index_col=0)
+            output_file_name = splitext(basename(csv_file_path))[0] + '_processed.csv'
+            output_file_path = join(output_path, output_file_name)
 
-        with open(output_file_path, 'w', 0) as output_file:
-            output_file.write(','.join(("date", "area-weighted", "max", "min", "count", "gauge_pairs")) + '\n')
+            with open(output_file_path, 'w', 0) as output_file:
+                output_file.write(','.join(("date", "area-weighted", "max", "min", "count", "gauge_pairs")) + '\n')
 
-            for date in csv_file.index:
-                points, stations, values = prepare_data_raw_data(csv_file, date, section_stations)
+                for date in csv_file.index:
+                    points, stations, values = prepare_data_raw_data(csv_file, date, section_stations)
 
-                count = len(values)
-                if len(values) == 0:
-                    awa = np.NaN
-                    upr = np.NaN
-                    lwr = np.NaN
-                else:
-                    values = np.array(values)
-                    points = np.array(points)
-                    if not np.all(values == values[0]):
-                        grid = griddata(points, values, (x, y), method="nearest")
-                        grid = np.ma.masked_where(masks_array == 0, grid)
-                        contrib = []
-                        unique_vals = np.unique(grid)
-                        count = 0
-                        for station, value in zip(stations, values):
-                            if value in unique_vals:
-                                mask = np.zeros_like(grid)
-                                mask = np.ma.masked_where(masks_array == 0, mask)
-                                mask[np.where(grid == value)] = 1
-                                unique_vals_count = np.sum(mask)
-                                contrib.append(unique_vals_count / masks_array.sum())
-                                count += 1
-                        awa = grid.mean()
-                        upr = max(unique_vals)
-                        lwr = min(unique_vals)
-                        values = contrib
+                    count = len(values)
+                    if len(values) == 0:
+                        awa = np.NaN
+                        upr = np.NaN
+                        lwr = np.NaN
                     else:
-                        awa = values[0]
-                        upr = values[0]
-                        lwr = values[0]
+                        values = np.array(values)
+                        points = np.array(points)
+                        if not np.all(values == values[0]):
+                            grid = griddata(points, values, (x, y), method="nearest")
+                            grid = np.ma.masked_where(masks_array == 0, grid)
+                            contrib = []
+                            unique_vals = np.unique(grid)
+                            count = 0
+                            for station, value in zip(stations, values):
+                                if value in unique_vals:
+                                    mask = np.zeros_like(grid)
+                                    mask = np.ma.masked_where(masks_array == 0, mask)
+                                    mask[np.where(grid == value)] = 1
+                                    unique_vals_count = np.sum(mask)
+                                    contrib.append(unique_vals_count / masks_array.sum())
+                                    count += 1
+                            awa = grid.mean()
+                            upr = max(unique_vals)
+                            lwr = min(unique_vals)
+                            values = contrib
+                        else:
+                            awa = values[0]
+                            upr = values[0]
+                            lwr = values[0]
 
-                line = "{0:s},{1:E},{2:E},{3:E},{4:d},".format(str(date), float(awa), float(upr), float(lwr), count)
-                for site, val in zip(stations, values):
-                    line += ' ' + site + "|{0:E}".format(val)
-                line += '\n'
-                output_file.write(line)
+                    line = "{0:s},{1:E},{2:E},{3:E},{4:d},".format(str(date), float(awa), float(upr), float(lwr), count)
+                    for site, val in zip(stations, values):
+                        line += ' ' + site + "|{0:E}".format(val)
+                    line += '\n'
+                    output_file.write(line)
+    except Exception:
+        logging.exception('Error occurred on processing daily')
 
 
 def prepare_data_raw_data(csv_file, date, section_stations):
